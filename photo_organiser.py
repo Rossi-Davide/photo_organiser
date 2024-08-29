@@ -156,6 +156,8 @@ def transfer_files(source_path,dest_path,dest_folders):
 
     dest_folders.sort()
 
+    beginning = datetime.datetime.now()
+
 
     #creating file queue 
 
@@ -164,6 +166,10 @@ def transfer_files(source_path,dest_path,dest_folders):
 
     #copying remaining files in the queue 
     copy_files_empty_queue(file_queue,dest_path,dest_folders,int(dest_folders[0]))
+
+    end = datetime.datetime.now()
+
+    print(f"SECONDS ELAPSED: {end-beginning}\n")
 
 
 
