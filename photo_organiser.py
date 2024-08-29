@@ -1,9 +1,17 @@
 #organizza le foto data una cartella di origine e una di destinazione
+"""
+La versione corrente implementa il multithreading per la copia
+Per ogni file da copiare viene gestito un thread separato in modo che le operazioni di gestione della coda non 
+rallentino la copia
+Dovrebbe apportare un aumento delle prestazioni in quanto la larghezza di banda massima del bus 
+è sempre utilizzata
+"""
 import os 
 import shutil
 import datetime
 import queue
 import math
+import threading
 
 
 def add_missing_folders(path_list,dest_path = '', starting_year = 2000):
@@ -27,12 +35,33 @@ def add_missing_folders(path_list,dest_path = '', starting_year = 2000):
 
 
 
+"""
+Riceve le informazioni di un singolo file e si occupa di copiarlo  
+"""
+def copy_singlefile_threaded(source, destination,semaphore):
+   
+   with semaphore:   
+        try:
+            shutil.copyfile(source,destination, follow_symlinks=False)
+            shutil.copystat(source,destination, follow_symlinks=False)
+
+        except OSError as error:
+            print(f"{error}\n")
+        
+
 
 def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
+
+    maximum_filesthread = 5
+
+    semaphore = threading.BoundedSemaphore(maximum_filesthread)
+
 
     while not queue.empty():
 
         file_object = queue.get()
+
+        #calcolo l'anno di creazione del file per capire in quale cartella smistarlo
 
         stats = file_object.stat(follow_symlinks= False)
 
@@ -40,6 +69,7 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
         creation_year = 1970 + creation_year
 
+        #indice nella lista della cartella dell'anno
         offset = creation_year - starting_year
 
         if offset < 0:
@@ -51,6 +81,9 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
                             EXPLICIT ACTION REQUIRED\n")
             
         else:
+
+            #indice valido, preparo il nome del file e costruisco percorso destinazione
+
             year = dest_folders[offset]
             folder_dest_path = os.path.join(dest_path,year)
             filename_offset = ""
@@ -59,7 +92,8 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
             filename_elems = file_object.name.split('.')
 
-            #first check for existence before copying files
+            #first check for existence of a file with the same name before copying files
+            
             exists:bool = True
             iterator: int = 1
 
@@ -85,10 +119,10 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
                 exists = os.path.exists(possible_file_path)    
         
-
+                
                 if exists:
 
-                    #editing filename offset
+                    #file already exists, editing filename offset and trying again
                     filename_offset = ''.join(("_",str(iterator)))
 
 
@@ -98,22 +132,22 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
                 iterator+=1
 
 
+            print(f"{file_object.path} going to : {full_dest_path}\n")
 
+
+            try:
+                #creo nuovo thread per il file da copiare
+                new_thread = threading.Thread(target=copy_singlefile_threaded,args=(file_object.path,full_dest_path,semaphore),name=filename)
+
+                #faccio partire il thread, termina automaticamente alla fine della copia
+                new_thread.start()
+            
+            except ValueError as error:
+                print(f"{error}\n")
+ 
 
             
-            try:
 
-                print(f"{file_object.path} going to : {full_dest_path}\n")
-
-
-                shutil.copyfile(file_object.path,full_dest_path, follow_symlinks=False)
-                shutil.copystat(file_object.path,full_dest_path, follow_symlinks=False)
-
-            except OSError as error:
-                print(f"{error}\n")
-        
-
-        #print(f"{file_object.path} : {stats.st_birthtime/31536000},{stats.st_mode}\n")
 
 
 
@@ -158,7 +192,6 @@ def transfer_files(source_path,dest_path,dest_folders):
 
     beginning = datetime.datetime.now()
 
-
     #creating file queue 
 
     file_queue = queue.Queue()
@@ -170,7 +203,7 @@ def transfer_files(source_path,dest_path,dest_folders):
     end = datetime.datetime.now()
 
     print(f"SECONDS ELAPSED: {end-beginning}\n")
-
+ 
 
 
 
