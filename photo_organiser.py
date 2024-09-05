@@ -52,7 +52,7 @@ def copy_singlefile_threaded(source, destination,semaphore):
 
 def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
-    maximum_filesthread = 5
+    maximum_filesthread = 100
 
     semaphore = threading.BoundedSemaphore(maximum_filesthread)
 
