@@ -12,6 +12,7 @@ import datetime
 import queue
 import math
 import threading
+import time
 
 
 def add_missing_folders(path_list,dest_path = '', starting_year = 2000):
@@ -38,21 +39,56 @@ def add_missing_folders(path_list,dest_path = '', starting_year = 2000):
 """
 Riceve le informazioni di un singolo file e si occupa di copiarlo  
 """
-def copy_singlefile_threaded(source, destination,semaphore):
-   
-   with semaphore:   
-        try:
-            shutil.copyfile(source,destination, follow_symlinks=False)
-            shutil.copystat(source,destination, follow_symlinks=False)
+def copy_singlefile_threaded(source,destination):
 
-        except OSError as error:
-            print(f"{error}\n")
+            c_source = source
+            c_dest = destination
+
+
+
+            shutil.copyfile(c_source,c_dest, follow_symlinks=False)
+            shutil.copystat(c_source,c_dest, follow_symlinks=False)
+
+
+
         
+
+#funzione per il controllo temporale del thread della copia
+def copy_singlefile_threaded_controlwrapper(source, destination,semaphore):
+
+    with semaphore:
+
+        try:
+
+            
+            cp_source = source
+            cp_destination = destination
+
+
+
+            copy_thread = threading.Thread(target= lambda :copy_singlefile_threaded(source = cp_source, destination = cp_destination))
+
+            copy_thread.start()
+
+            
+            #copy thread has 3 minutes to copy the file, otherwise it automatically shuts down
+            copy_thread.join(300)
+
+            if copy_thread.is_alive():
+                raise Exception(f"TIMEOUT ERROR COPYING FROM {source} TO {destination}\n")
+            
+        #handler for all copying problems
+        except (RuntimeError,OSError,Exception) as error:
+            print(f"{error}\n")            
+
+
+
+
 
 
 def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
-    maximum_filesthread = 100
+    maximum_filesthread = 5
 
     semaphore = threading.BoundedSemaphore(maximum_filesthread)
 
@@ -65,7 +101,13 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
         stats = file_object.stat(follow_symlinks= False)
 
-        creation_year = math.trunc(stats.st_birthtime/31536000)
+
+        creation_time = stats.st_birthtime
+        modification_time = stats.st_mtime
+
+        photo_year = creation_time if creation_time < modification_time else modification_time
+
+        creation_year = math.trunc(photo_year/31536000)
 
         creation_year = 1970 + creation_year
 
@@ -137,9 +179,9 @@ def copy_files_empty_queue(queue,dest_path,dest_folders,starting_year=2000):
 
             try:
                 #creo nuovo thread per il file da copiare
-                new_thread = threading.Thread(target=copy_singlefile_threaded,args=(file_object.path,full_dest_path,semaphore),name=filename)
+                new_thread = threading.Thread(target=copy_singlefile_threaded_controlwrapper,args=(file_object.path,full_dest_path,semaphore),name=filename)
 
-                #faccio partire il thread, termina automaticamente alla fine della copia
+                #faccio partire il thread 
                 new_thread.start()
             
             except ValueError as error:
@@ -199,6 +241,9 @@ def transfer_files(source_path,dest_path,dest_folders):
 
     #copying remaining files in the queue 
     copy_files_empty_queue(file_queue,dest_path,dest_folders,int(dest_folders[0]))
+
+    while threading.active_count()>1:
+        continue 
 
     end = datetime.datetime.now()
 
